@@ -72,11 +72,28 @@ The package has no runtime dependency on the Bloopbot application. The
 
 ## Separate repository
 
-The package directory can become the root of its own Git repository using
-`git subtree split --prefix=packages/overlay-sdk -b overlay-sdk-release` from
-the Bloopbot repository. Push that branch to the package repository after
-review. In that repository, run the commands above, inspect the npm tarball,
-then publish the reviewed version with `npm publish --access public`. Package
-publishing is separate from a Bloopbot deployment. Keep version changes and
-the browser artifact from the same source commit; the app's build stages that
-artifact at `/assets/overlay-sdk-<version>.js`.
+The package directory is self-contained: it has its own lockfile, build,
+typecheck, lint, WebSocket integration tests, coverage gate, and GitHub Actions
+workflow. No package source or build step imports the Bloopbot application.
+To establish a separate repository, export `packages/overlay-sdk` as its root:
+
+```sh
+git subtree split --prefix=packages/overlay-sdk -b overlay-sdk-release
+git push <package-repository-remote> overlay-sdk-release:main
+```
+
+Use a new, empty package repository for the first push. Later updates use the
+same subtree split and a fast-forward push. Review its `main` branch before
+releasing. The `Package` workflow runs the complete package gate for pushes and
+pull requests. A published GitHub release whose tag exactly matches
+`v<package.json version>` runs the gate and publishes the npm tarball. Configure
+the npm trusted publisher for `@bloopbot/overlay-sdk` to authorize that
+repository's `.github/workflows/package.yml` workflow with direct publishing.
+The publish job uses GitHub's OIDC identity; it needs no stored npm token.
+The initial package claim and trusted-publisher configuration require an npm
+owner of the `@bloopbot` scope. No release is published by extracting the tree.
+
+Keep each version change and browser artifact from the same source commit. The
+app stages that artifact at `/assets/overlay-sdk-<version>.js`. Publishing the
+package and deploying the app are separate steps; deploy a compatible V2 server
+before directing overlay authors to a new SDK version.
