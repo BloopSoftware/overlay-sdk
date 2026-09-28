@@ -92,7 +92,8 @@ git push <package-repository-remote> overlay-sdk-release:main
 ```
 
 Use a new, empty package repository for the first push. Later updates use the
-same subtree split and a fast-forward push. Review its `main` branch before
+same subtree split without `-b` (it prints the new commit ID), then push that
+commit ID to the package repository's `main` without force. Review its `main` branch before
 releasing. The `Package` workflow runs the complete package gate for pushes and
 pull requests. A published GitHub release whose tag exactly matches
 `v<package.json version>` runs the gate and publishes the npm tarball. Configure
