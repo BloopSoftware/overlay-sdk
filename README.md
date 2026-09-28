@@ -3,8 +3,7 @@
 Typed client for custom OBS Browser Source overlays. The SDK handles the
 connection and data. Your page renders the overlay.
 
-This package is under development. The Bloopbot V2 record endpoint and developer
-documentation are not yet complete; do not publish this version to npm.
+The full SDK reference is served at `/developers/overlays` on Bloopbot.
 
 ## Use it in a page
 
