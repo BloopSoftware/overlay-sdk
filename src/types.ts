@@ -61,7 +61,7 @@ export interface OverlayState {
 }
 
 export interface Diagnostic {
-  code: 'subscription_rejected' | 'invalid_frame' | 'connection_closed' | 'connection_error' | 'handler_error' | 'unsupported_server' | 'access_expired';
+  code: 'subscription_rejected' | 'invalid_frame' | 'connection_closed' | 'connection_error' | 'handler_error' | 'unsupported_server' | 'access_expired' | 'record_unavailable';
   message: string;
   subscription?: RejectedSubscription;
 }

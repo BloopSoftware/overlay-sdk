@@ -180,6 +180,8 @@ describe('published overlay client', () => {
     await new Promise((resolve) => setTimeout(resolve, 550));
     expect(connections).toBe(1);
     expect(diagnostics).toContain('access_expired');
+    expect(overlay.state.records).toEqual({});
+    expect(overlay.state.variables).toEqual({});
     overlay.stop();
   });
 
@@ -223,7 +225,7 @@ describe('published overlay client', () => {
   });
 
   it('reads only requested records and keeps the newest live revision', async () => {
-    const mockFetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+    const mockFetch = vi.fn().mockImplementation(async () => new Response(JSON.stringify({
       kind: 'widget', id: 'one', revision: 2, data: { title: 'Initial' },
     }), { status: 200, headers: { 'content-type': 'application/json' } }));
     vi.stubGlobal('fetch', mockFetch);
@@ -246,6 +248,28 @@ describe('published overlay client', () => {
     overlay.stop();
   });
 
+  it('refreshes granted records and removes a record that is no longer available', async () => {
+    const mockFetch = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ kind: 'widget', id: 'one', revision: 1, data: { title: 'First' } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ kind: 'widget', id: 'one', revision: 2, data: { title: 'Changed' } }), { status: 200 }))
+      .mockResolvedValue(new Response(null, { status: 404 }));
+    vi.stubGlobal('fetch', mockFetch);
+    server.on('connection', (socket) => socket.once('message', () => {
+      socket.send(JSON.stringify({
+        type: 'sdk.subscribed', version: 2, revision: 1,
+        accepted: { events: [], variables: [], messages: [], boards: [], records: [{ kind: 'widget', id: 'one' }] }, rejected: [],
+      }));
+      socket.send(JSON.stringify({ type: 'sdk.ready', version: 2, revision: 1 }));
+    }));
+    const overlay = createOverlay({ events: [], records: [{ kind: 'widget', id: 'one' }] }, { url, recordRefreshMs: 1000 });
+    await overlay.start();
+    await vi.waitFor(() => expect(overlay.state.records['widget:one']?.revision).toBe(1));
+    await vi.waitFor(() => expect(overlay.state.records['widget:one']?.revision).toBe(2), { timeout: 1500 });
+    await vi.waitFor(() => expect(overlay.state.records['widget:one']).toBeUndefined(), { timeout: 1500 });
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+    overlay.stop();
+  });
+
   it('handles missing, denied, and malformed record responses without exposing the credential', async () => {
     const overlay = createOverlay({ events: [], records: [{ kind: 'theme', id: 'one' }] }, { url });
     const mockFetch = vi.fn();
@@ -259,5 +283,6 @@ describe('published overlay client', () => {
     await expect(overlay.getRecord('theme', '../invalid')).rejects.toThrow(TypeError);
     vi.stubGlobal('fetch', undefined);
     await expect(overlay.getRecord('theme', 'one')).rejects.toThrow('Fetch is unavailable');
+    expect(() => createOverlay({ events: [] }, { recordRefreshMs: 999 })).toThrow(TypeError);
   });
 });

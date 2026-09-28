@@ -66,6 +66,14 @@ export abstract class OverlayRuntime implements OverlayReader {
     this.setState({ records: { ...this.current.records, [key]: record } });
   }
 
+  protected removeRecord(kind: RecordKind, id: string): void {
+    const key = recordKey(kind, id);
+    if (!(key in this.current.records)) return;
+    const records = { ...this.current.records };
+    delete records[key];
+    this.setState({ records });
+  }
+
   protected setState(update: Partial<OverlayState>): void {
     this.current = { ...this.current, ...update };
     for (const handler of this.stateHandlers) {

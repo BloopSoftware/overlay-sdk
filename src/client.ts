@@ -1,6 +1,6 @@
 import { helloFrame, isRecordKind, readEventFrame, readReadyFrame, readRecord, readSubscribedFrame, recordKey } from './protocol.js';
 import { OverlayRuntime } from './runtime.js';
-import type { OverlayFrame, OverlayReader, OverlayRecord, RecordKind, Subscriptions } from './types.js';
+import type { OverlayFrame, OverlayReader, OverlayRecord, RecordKind, RecordRequest, Subscriptions } from './types.js';
 
 export interface OverlayOptions {
   /** The OBS Browser Source URL normally supplies `?ws=`. Override for local development. */
@@ -9,6 +9,8 @@ export interface OverlayOptions {
   handshakeTimeoutMs?: number;
   /** Defaults to true. */
   reconnect?: boolean;
+  /** How often granted records are refreshed; defaults to 30 seconds. */
+  recordRefreshMs?: number;
 }
 
 function socketUrl(override?: string): string {
@@ -26,8 +28,10 @@ class LiveOverlay extends OverlayRuntime {
   private attempt = 0;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private handshakeTimer: ReturnType<typeof setTimeout> | null = null;
+  private recordTimer: ReturnType<typeof setInterval> | null = null;
   private pending: { resolve: () => void; reject: (error: Error) => void } | null = null;
   private pendingStart: Promise<void> | null = null;
+  private grantedRecords: RecordRequest[] = [];
 
   constructor(private readonly subscriptions: Subscriptions, private readonly options: OverlayOptions) {
     super();
@@ -37,6 +41,10 @@ class LiveOverlay extends OverlayRuntime {
     if (options.handshakeTimeoutMs !== undefined &&
       (!Number.isSafeInteger(options.handshakeTimeoutMs) || options.handshakeTimeoutMs < 1 || options.handshakeTimeoutMs > 60_000)) {
       throw new TypeError('Handshake timeout must be 1–60000 ms');
+    }
+    if (options.recordRefreshMs !== undefined &&
+      (!Number.isSafeInteger(options.recordRefreshMs) || options.recordRefreshMs < 1000 || options.recordRefreshMs > 3_600_000)) {
+      throw new TypeError('Record refresh interval must be 1000–3600000 ms');
     }
   }
 
@@ -63,10 +71,15 @@ class LiveOverlay extends OverlayRuntime {
     this.socket = null;
     this.pending?.reject(new Error('Overlay stopped'));
     this.pending = null;
+    this.grantedRecords = [];
     this.setState({ status: 'stopped' });
   }
 
   async getRecord(kind: RecordKind, id: string): Promise<OverlayRecord | null> {
+    return this.readRecord(kind, id, () => true);
+  }
+
+  private async readRecord(kind: RecordKind, id: string, isCurrent: () => boolean): Promise<OverlayRecord | null> {
     if (!isRecordKind(kind) || !/^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127}$/.test(id)) {
       throw new TypeError('Invalid overlay record');
     }
@@ -80,7 +93,7 @@ class LiveOverlay extends OverlayRuntime {
     const endpoint = new URL(`/overlay-sdk/v2/records/${encodeURIComponent(token)}/${kind}/${encodeURIComponent(id)}`, socket);
     endpoint.protocol = socket.protocol === 'wss:' ? 'https:' : 'http:';
     const response = await fetch(endpoint, { cache: 'no-store', credentials: 'omit' });
-    if (response.status === 404) return null;
+    if (!isCurrent() || response.status === 404) return null;
     if (!response.ok) throw new Error('Overlay record unavailable');
     const record = readRecord(await response.json());
     if (!record || record.kind !== kind || record.id !== id) throw new Error('Invalid overlay record response');
@@ -123,6 +136,7 @@ class LiveOverlay extends OverlayRuntime {
         if (subscribed) {
           acknowledged = true;
           subscribedRevision = subscribed.revision;
+          this.grantedRecords = subscribed.accepted.records;
           this.setState({ revision: subscribed.revision });
           for (const rejection of subscribed.rejected) {
             this.emitDiagnostic({ code: 'subscription_rejected', message: `${rejection.kind} ${rejection.name}: ${rejection.reason}`, subscription: rejection });
@@ -148,6 +162,7 @@ class LiveOverlay extends OverlayRuntime {
           this.setState({ status: 'ready' });
           this.pending?.resolve();
           this.pending = null;
+          this.startRecordRefresh(socket);
         }
         return;
       }
@@ -165,8 +180,11 @@ class LiveOverlay extends OverlayRuntime {
       if (this.socket !== socket) return;
       this.socket = null;
       this.clearHandshakeTimer();
+      this.clearRecordTimer();
       if (!this.active) return;
-      this.setState({ status: event.code === 1008 ? 'expired' : 'stale' });
+      this.setState(event.code === 1008
+        ? { status: 'expired', variables: {}, records: {} }
+        : { status: 'stale' });
       this.emitDiagnostic({ code: 'connection_closed', message: `Overlay connection closed (${event.code})` });
       if (event.code === 1008) this.emitDiagnostic({ code: 'access_expired', message: 'Overlay access expired or was revoked' });
       if (!ready) {
@@ -192,8 +210,36 @@ class LiveOverlay extends OverlayRuntime {
 
   private clearTimers(): void {
     this.clearHandshakeTimer();
+    this.clearRecordTimer();
     if (this.retryTimer) clearTimeout(this.retryTimer);
     this.retryTimer = null;
+  }
+
+  private startRecordRefresh(socket: WebSocket): void {
+    this.clearRecordTimer();
+    if (this.grantedRecords.length === 0) return;
+    let refreshing = false;
+    const refresh = () => {
+      if (refreshing || this.socket !== socket || this.state.status !== 'ready') return;
+      refreshing = true;
+      void Promise.all(this.grantedRecords.map(async (record) => {
+        try {
+          const found = await this.readRecord(record.kind, record.id, () => this.socket === socket);
+          if (!found && this.socket === socket) this.removeRecord(record.kind, record.id);
+        } catch {
+          if (this.socket === socket) this.emitDiagnostic({
+            code: 'record_unavailable', message: `Could not refresh ${record.kind} ${record.id}`,
+          });
+        }
+      })).finally(() => { refreshing = false; });
+    };
+    refresh();
+    this.recordTimer = setInterval(refresh, this.options.recordRefreshMs ?? 30_000);
+  }
+
+  private clearRecordTimer(): void {
+    if (this.recordTimer) clearInterval(this.recordTimer);
+    this.recordTimer = null;
   }
 }
 

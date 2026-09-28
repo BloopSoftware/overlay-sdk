@@ -31,6 +31,11 @@ await overlay.start();
 `start()` resolves after the server has acknowledged subscriptions and finished
 the initial state replay. Event handlers may receive replay frames while the
 connection state is `connecting`; register them before calling `start()`.
+Granted named records are read after `start()` and refreshed every 30 seconds;
+`onState` reports changed revisions. Pass `recordRefreshMs` to choose an interval
+between one second and one hour. `getRecord(kind, id)` reads one requested record
+immediately. A missing or revoked record is removed from `state.records` on the
+next refresh.
 
 The OBS Browser Source URL supplies `?ws=`. During local development, pass
 `{ url: 'ws://localhost:3000/overlay/...' }` as the second argument to
