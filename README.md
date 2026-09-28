@@ -83,14 +83,14 @@ The package has no runtime dependency on the Bloopbot application. The
 The package directory is self-contained: it has its own lockfile, build,
 typecheck, lint, WebSocket integration tests, coverage gate, and GitHub Actions
 workflow. No package source or build step imports the Bloopbot application.
-To establish a separate repository, export `packages/overlay-sdk` as its root:
+The canonical package repository is [BloopSoftware/overlay-sdk](https://github.com/BloopSoftware/overlay-sdk). To sync it from this monorepo, export `packages/overlay-sdk` as its root:
 
 ```sh
 git subtree split --prefix=packages/overlay-sdk -b overlay-sdk-release
-git push <package-repository-remote> overlay-sdk-release:main
+git push git@github.com:BloopSoftware/overlay-sdk.git overlay-sdk-release:main
 ```
 
-Use a new, empty package repository for the first push. Later updates use the
+The first push has already established the package repository. Later updates use the
 same subtree split without `-b` (it prints the new commit ID), then push that
 commit ID to the package repository's `main` without force. Review its `main` branch before
 releasing. The `Package` workflow runs the complete package gate for pushes and
