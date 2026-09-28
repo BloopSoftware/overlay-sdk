@@ -102,7 +102,7 @@ The publish job uses GitHub's OIDC identity; it needs no stored npm token.
 The initial package claim and trusted-publisher configuration require an npm
 owner of the `@bloopbot` scope. No release is published by extracting the tree.
 
-Keep each version change and browser artifact from the same source commit. The
+Protocol major versions remain supported for at least 12 months after a replacement is introduced. Keep each version change and browser artifact from the same source commit. The
 app stages that artifact at `/assets/overlay-sdk-<version>.js`. Publishing the
 package and deploying the app are separate steps; deploy a compatible V2 server
 before directing overlay authors to a new SDK version.
