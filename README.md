@@ -28,6 +28,10 @@ overlay.onDiagnostic((diagnostic) => console.warn(diagnostic.message));
 await overlay.start();
 ```
 
+`start()` resolves after the server has acknowledged subscriptions and finished
+the initial state replay. Event handlers may receive replay frames while the
+connection state is `connecting`; register them before calling `start()`.
+
 The OBS Browser Source URL supplies `?ws=`. During local development, pass
 `{ url: 'ws://localhost:3000/overlay/...' }` as the second argument to
 `createOverlay`. Keep that URL private: it contains the overlay credential.

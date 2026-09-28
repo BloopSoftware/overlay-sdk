@@ -1,4 +1,4 @@
-import { helloFrame, isRecordKind, readEventFrame, readRecord, readSubscribedFrame, recordKey } from './protocol.js';
+import { helloFrame, isRecordKind, readEventFrame, readReadyFrame, readRecord, readSubscribedFrame, recordKey } from './protocol.js';
 import { OverlayRuntime } from './runtime.js';
 import type { OverlayFrame, OverlayReader, OverlayRecord, RecordKind, Subscriptions } from './types.js';
 
@@ -100,10 +100,12 @@ class LiveOverlay extends OverlayRuntime {
     this.socket = socket;
     const replay: OverlayFrame[] = [];
     let acknowledged = false;
+    let ready = false;
+    let subscribedRevision: number | null = null;
     const timeoutMs = this.options.handshakeTimeoutMs ?? 5000;
     this.handshakeTimer = setTimeout(() => {
-      if (acknowledged || this.socket !== socket) return;
-      this.emitDiagnostic({ code: 'unsupported_server', message: 'The overlay server did not acknowledge SDK V2' });
+      if (ready || this.socket !== socket) return;
+      this.emitDiagnostic({ code: 'unsupported_server', message: 'The overlay server did not finish SDK V2 setup' });
       socket.close(1002, 'SDK V2 required');
     }, timeoutMs);
 
@@ -120,20 +122,38 @@ class LiveOverlay extends OverlayRuntime {
         const subscribed = readSubscribedFrame(raw);
         if (subscribed) {
           acknowledged = true;
-          this.clearHandshakeTimer();
-          this.attempt = 0;
-          this.setState({ status: 'ready', revision: subscribed.revision });
+          subscribedRevision = subscribed.revision;
+          this.setState({ revision: subscribed.revision });
           for (const rejection of subscribed.rejected) {
             this.emitDiagnostic({ code: 'subscription_rejected', message: `${rejection.kind} ${rejection.name}: ${rejection.reason}`, subscription: rejection });
           }
-          this.pending?.resolve();
-          this.pending = null;
           for (const frame of replay) this.acceptEvent(frame);
           return;
         }
         const frame = readEventFrame(raw);
         if (frame && frame.type !== 'sdk.subscribed' && replay.length < 256) replay.push(frame);
         else this.emitDiagnostic({ code: 'invalid_frame', message: 'Ignored frame before SDK V2 acknowledgement' });
+        return;
+      }
+      const done = readReadyFrame(raw);
+      if (done) {
+        if (done.revision !== subscribedRevision) {
+          this.emitDiagnostic({ code: 'invalid_frame', message: 'Ignored mismatched SDK ready frame' });
+          return;
+        }
+        if (!ready) {
+          ready = true;
+          this.clearHandshakeTimer();
+          this.attempt = 0;
+          this.setState({ status: 'ready' });
+          this.pending?.resolve();
+          this.pending = null;
+        }
+        return;
+      }
+      if (typeof raw === 'object' && raw !== null && 'type' in raw &&
+        (raw.type === 'sdk.ready' || raw.type === 'sdk.subscribed')) {
+        this.emitDiagnostic({ code: 'invalid_frame', message: 'Ignored invalid SDK control frame' });
         return;
       }
       const frame = readEventFrame(raw);
@@ -149,7 +169,7 @@ class LiveOverlay extends OverlayRuntime {
       this.setState({ status: event.code === 1008 ? 'expired' : 'stale' });
       this.emitDiagnostic({ code: 'connection_closed', message: `Overlay connection closed (${event.code})` });
       if (event.code === 1008) this.emitDiagnostic({ code: 'access_expired', message: 'Overlay access expired or was revoked' });
-      if (!acknowledged) {
+      if (!ready) {
         this.pending?.reject(new Error('Overlay SDK V2 handshake failed'));
         this.pending = null;
       }

@@ -48,6 +48,7 @@ describe('published overlay client', () => {
         socket.send(JSON.stringify({ type: 'vars', values: { score: 5 } }));
         socket.send(JSON.stringify({ type: 'follow', name: 'Ada' }));
         socket.send(JSON.stringify({ type: 'stage', kind: 'media', op: 'play' }));
+        socket.send(JSON.stringify({ type: 'sdk.ready', version: 2, revision: 4 }));
       });
     });
     const overlay = createOverlay(subscriptions, { url });
@@ -79,24 +80,56 @@ describe('published overlay client', () => {
           type: 'sdk.subscribed', version: 2, revision: 1,
           accepted: { events: ['follow'], variables: [], messages: [], boards: [], records: [] }, rejected: [],
         }));
+        socket.send(JSON.stringify({ type: 'sdk.ready', version: 2, revision: 1 }));
       });
     });
     const overlay = createOverlay(subscriptions, { url });
     const states: string[] = [];
     overlay.onState((state) => states.push(state.status));
-    overlay.onEvent('follow', () => expect(overlay.state.status).toBe('ready'));
+    overlay.onEvent('follow', () => expect(overlay.state.status).toBe('connecting'));
     await overlay.start();
     await vi.waitFor(() => expect(overlay.state.lastEventAt).not.toBeNull());
     expect(states).toContain('ready');
     overlay.stop();
   });
 
+  it('waits for replay completion and ignores a ready frame for another revision', async () => {
+    let finishReplay: (() => void) | undefined;
+    server.on('connection', (socket) => socket.once('message', () => {
+      socket.send(JSON.stringify({
+        type: 'sdk.subscribed', version: 2, revision: 2,
+        accepted: { events: ['follow'], variables: [], messages: [], boards: [], records: [] }, rejected: [],
+      }));
+      socket.send(JSON.stringify({ type: 'sdk.ready', version: 2, revision: 1 }));
+      finishReplay = () => {
+        socket.send(JSON.stringify({ type: 'follow', name: 'Replayed' }));
+        socket.send(JSON.stringify({ type: 'sdk.ready', version: 2, revision: 2 }));
+      };
+    }));
+    const overlay = createOverlay(subscriptions, { url });
+    const diagnostics: string[] = [];
+    overlay.onDiagnostic((item) => diagnostics.push(item.code));
+    let settled = false;
+    const starting = overlay.start().then(() => { settled = true; });
+    await vi.waitFor(() => expect(finishReplay).toBeTypeOf('function'));
+    await vi.waitFor(() => expect(diagnostics).toContain('invalid_frame'));
+    expect(settled).toBe(false);
+    finishReplay?.();
+    await starting;
+    expect(overlay.state.status).toBe('ready');
+    expect(overlay.state.lastEventAt).not.toBeNull();
+    overlay.stop();
+  });
+
   it('uses the OBS ws query parameter and allows an explicit local override', async () => {
     vi.stubGlobal('location', { href: `https://example.test/overlay.html?ws=${encodeURIComponent(url)}` });
-    server.on('connection', (socket) => socket.once('message', () => socket.send(JSON.stringify({
-      type: 'sdk.subscribed', version: 2, revision: 1,
-      accepted: { events: [], variables: [], messages: [], boards: [], records: [] }, rejected: [],
-    }))));
+    server.on('connection', (socket) => socket.once('message', () => {
+      socket.send(JSON.stringify({
+        type: 'sdk.subscribed', version: 2, revision: 1,
+        accepted: { events: [], variables: [], messages: [], boards: [], records: [] }, rejected: [],
+      }));
+      socket.send(JSON.stringify({ type: 'sdk.ready', version: 2, revision: 1 }));
+    }));
     const fromQuery = createOverlay(subscriptions);
     await fromQuery.start();
     fromQuery.stop();
@@ -135,6 +168,7 @@ describe('published overlay client', () => {
           type: 'sdk.subscribed', version: 2, revision: 1,
           accepted: { events: [], variables: [], messages: [], boards: [], records: [] }, rejected: [],
         }));
+        socket.send(JSON.stringify({ type: 'sdk.ready', version: 2, revision: 1 }));
         setTimeout(() => socket.close(1008, 'Access changed'), 10);
       });
     });
@@ -174,6 +208,7 @@ describe('published overlay client', () => {
           type: 'sdk.subscribed', version: 2, revision: connections,
           accepted: { events: [], variables: [], messages: [], boards: [], records: [] }, rejected: [],
         }));
+        socket.send(JSON.stringify({ type: 'sdk.ready', version: 2, revision: connections }));
         if (connections === 1) setTimeout(() => socket.close(1012, 'Restart'), 10);
       });
     });
@@ -198,6 +233,7 @@ describe('published overlay client', () => {
         accepted: { events: [], variables: [], messages: [], boards: [], records: [{ kind: 'widget', id: 'one' }] }, rejected: [],
       }));
       socket.send(JSON.stringify({ type: 'sdk.record', kind: 'widget', id: 'one', revision: 3, data: { title: 'Live' } }));
+      socket.send(JSON.stringify({ type: 'sdk.ready', version: 2, revision: 1 }));
     }));
     const overlay = createOverlay({ events: [], records: [{ kind: 'widget', id: 'one' }] }, { url });
     await overlay.start();

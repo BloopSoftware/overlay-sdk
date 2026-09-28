@@ -10,6 +10,12 @@ export interface SubscribedFrame {
   rejected: RejectedSubscription[];
 }
 
+export interface ReadyFrame {
+  type: 'sdk.ready';
+  version: 2;
+  revision: number;
+}
+
 const NAME = /^[a-zA-Z_][a-zA-Z0-9_.-]{0,95}$/;
 const BOARD = /^[a-zA-Z0-9_:.-]{1,96}$/;
 const RECORD_ID = /^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127}$/;
@@ -83,6 +89,12 @@ export function readSubscribedFrame(value: unknown): SubscribedFrame | null {
     !value.accepted.records.every(isRecordRequest) || !Array.isArray(value.rejected) ||
     !value.rejected.every(isRejection)) return null;
   return value as unknown as SubscribedFrame;
+}
+
+export function readReadyFrame(value: unknown): ReadyFrame | null {
+  return isObject(value) && value.type === 'sdk.ready' && value.version === PROTOCOL_VERSION &&
+    typeof value.revision === 'number' && Number.isSafeInteger(value.revision) && value.revision > 0
+    ? value as unknown as ReadyFrame : null;
 }
 
 export function readEventFrame(value: unknown): OverlayFrame | null {
