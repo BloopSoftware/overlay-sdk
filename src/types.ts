@@ -1,7 +1,7 @@
 /** Names of live frames available to normal Bloopbot widgets. */
 export const EVENT_FAMILIES = [
   'adbreak', 'charity', 'chat', 'chathighlight', 'cheer', 'contributions',
-  'countdown', 'credits', 'custom', 'emotewall', 'follow', 'gift', 'giveaway',
+  'countdown', 'credits', 'custom', 'emotewall', 'eventlist', 'follow', 'gift', 'giveaway',
   'goal', 'hypetrain', 'jar', 'leaderboard', 'minigames', 'poll', 'prediction',
   'queue', 'raid', 'resub', 'slideshow', 'stage.alert', 'stage.media',
   'stage.minigame', 'sub', 'tickerline', 'wheel',
