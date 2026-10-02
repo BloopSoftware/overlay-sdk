@@ -7,3 +7,8 @@ export type {
   AcceptedSubscriptions, ConnectionStatus, Diagnostic, OverlayFrame, OverlayReader,
   OverlayState, OverlayRecord, OverlayValue, EventFrame, RecordRequest, RejectedSubscription, Subscriptions, Unsubscribe,
 } from './types.js';
+
+export type * from './events/index.js';
+export type * from './messages.js';
+
+export type * from './records/index.js';

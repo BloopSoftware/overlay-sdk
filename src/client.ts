@@ -87,10 +87,10 @@ class LiveOverlay extends OverlayRuntime {
     this.setState({ status: 'stopped', variables: {}, records: {}, lastEventAt: null, revision: null });
   }
 
-  async getRecord(kind: RecordKind, id: string): Promise<OverlayRecord | null> {
+  async getRecord<K extends RecordKind>(kind: K, id: string): Promise<OverlayRecord<K> | null> {
     if (this.state.status === 'stopped' || this.state.status === 'expired') throw new Error('Start the overlay before reading records');
     const generation = this.generation;
-    return this.readRecord(kind, id, () => generation === this.generation);
+    return this.readRecord(kind, id, () => generation === this.generation) as Promise<OverlayRecord<K> | null>;
   }
 
   private async readRecord(kind: RecordKind, id: string, isCurrent: () => boolean): Promise<OverlayRecord | null> {

@@ -44,7 +44,7 @@ with the grants chosen for the named overlay; a requested name does not grant
 access by itself.
 
 For a browser page without a build tool, load the versioned script from
-Bloopbot (`/assets/overlay-sdk-1.0.0.js`) and use
+Bloopbot (`/assets/overlay-sdk-1.1.0.js`) and use
 `BloopbotOverlay.createOverlay(...)`. The browser and npm builds use the same
 source and version.
 
@@ -60,8 +60,8 @@ overlay.emit({ type: 'follow', name: 'Ada' });
 overlay.stop();
 ```
 
-Simulation never opens a socket. It uses the same event and state interface as
-the live client. Use `setVariables` and `setRecord` to exercise state reads.
+Simulation never opens a socket. It uses the same typed event and state interface as
+the live client. Every exported event family and its raw payload, wire envelope and published record DTO has a TypeScript declaration. Use `setVariables` and `setRecord` to exercise state reads.
 
 ## Build and test
 
@@ -115,4 +115,4 @@ The named-overlay transport still uses protocol V2. Configuration is detached at
 
 `createGraphicsRuntime(options)` supplies the Studio v1.0 context without importing the application or animation libraries. Hosts declare events, variables, scalar settings and resolved asset URLs, supply an optional paused timeline factory, and drive monotonic milliseconds via `advance`. The context exposes immutable settings/assets/variables, event and resize listeners, ticks, scheduled callbacks and exactly-once disposal. Recreate it and replay events to seek backwards. Every subscription and scheduled callback has cancellation. Destruction kills registered timelines and clears jobs/listeners. Callbacks are isolated and report bounded generic diagnostics.
 
-Migrating from 0.1.0: recreate a reader to change subscriptions instead of mutating arrays; handle null after cancelled reads; use a listener's unsubscribe when discarding it. The `/assets/overlay-sdk-0.1.0.js` browser artifact remains available for existing pinned pages. New starters use 1.0.0. Pin the tested version and consult the developer reference before updating deployed overlays.
+Migrating from 0.1.0: recreate a reader to change subscriptions instead of mutating arrays; handle null after cancelled reads; use a listener's unsubscribe when discarding it. The `/assets/overlay-sdk-0.1.0.js` browser artifact remains available for existing pinned pages. New starters use 1.1.0. SDK 1.0.0 browser builds remain available for existing pages. Pin the tested version and consult the developer reference before updating deployed overlays.

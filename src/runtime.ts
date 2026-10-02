@@ -27,7 +27,7 @@ export abstract class OverlayRuntime implements OverlayReader {
   get state(): OverlayState { return this.current; }
   abstract start(): Promise<void>;
   abstract stop(): void;
-  abstract getRecord(kind: RecordKind, id: string): Promise<OverlayRecord | null>;
+  abstract getRecord<K extends RecordKind>(kind: K, id: string): Promise<OverlayRecord<K> | null>;
 
   onEvent<F extends EventFamily>(family: F, handler: (frame: EventFrame<F>) => void): Unsubscribe {
     const handlers = this.events.get(family) ?? new Set<(frame: OverlayFrame) => void>();

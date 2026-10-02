@@ -1,4 +1,4 @@
-import type { OverlayFrame, Unsubscribe } from './types.js';
+import type { EventFamily, EventFrame, OverlayFrame, Unsubscribe } from './types.js';
 
 export const GRAPHICS_API_VERSION = '1.0' as const;
 export type GraphicValue = string | number | boolean | null;
@@ -12,11 +12,18 @@ export interface GraphicsContext<T extends GraphicTimeline = GraphicTimeline> {
   readonly assets: Readonly<Record<string, string>>;
   readonly timeMs: number;
   readonly size: GraphicSize;
+  /** Current declared variable values, with absent values omitted. */
   getVariables(): Readonly<Record<string, GraphicValue>>;
+  /** Subscribe to a declared family; the callback receives its raw typed payload. */
+  onEvent<F extends EventFamily>(type: F, handler: (frame: EventFrame<F>) => void): Unsubscribe;
   onEvent(type: string, handler: (frame: OverlayFrame) => void): Unsubscribe;
+  /** Receive the current values immediately, then each variables update. */
   onVariables(handler: (values: Readonly<Record<string, GraphicValue>>) => void): Unsubscribe;
+  /** Receive an initial tick and every advance of the shared preview clock. */
   onTick(handler: (tick: GraphicTick) => void): Unsubscribe;
+  /** Receive the initial size, then container resize notifications. */
   onResize(handler: (size: GraphicSize) => void): Unsubscribe;
+  /** Release renderers, listeners and other resources before a reset or close. */
   onDispose(handler: () => void): Unsubscribe;
   /** Register a paused timeline against the same clock as events and ticks. */
   timeline(): T;

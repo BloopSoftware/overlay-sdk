@@ -2,19 +2,8 @@ import type { AcceptedSubscriptions, OverlayFrame, OverlayRecord, RecordKind, Re
 
 export const PROTOCOL_VERSION = 2;
 
-export interface SubscribedFrame {
-  type: 'sdk.subscribed';
-  version: 2;
-  revision: number;
-  accepted: AcceptedSubscriptions;
-  rejected: RejectedSubscription[];
-}
-
-export interface ReadyFrame {
-  type: 'sdk.ready';
-  version: 2;
-  revision: number;
-}
+import type { HelloFrame, SubscribedFrame, ReadyFrame } from './messages.js';
+export type { HelloFrame, SubscribedFrame, ReadyFrame } from './messages.js';
 
 const NAME = /^[a-zA-Z_][a-zA-Z0-9_.-]{0,95}$/;
 const BOARD = /^[a-zA-Z0-9_:.-]{1,96}$/;
@@ -33,7 +22,7 @@ function uniqueNames(values: readonly string[], label: string, max: number, patt
 }
 
 /** A malformed request never reaches the socket; the server decides grants. */
-export function helloFrame(subscriptions: Subscriptions): { hello: 'overlay-sdk'; version: number; subscribe: AcceptedSubscriptions } {
+export function helloFrame(subscriptions: Subscriptions): HelloFrame {
   if (!subscriptions || !Array.isArray(subscriptions.events)) throw new TypeError('Events must be an array');
   const events = uniqueNames(subscriptions.events, 'event', 64);
   const variables = uniqueNames(subscriptions.variables ?? [], 'variable', 32);

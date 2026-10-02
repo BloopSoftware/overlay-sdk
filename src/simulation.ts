@@ -44,11 +44,11 @@ class LocalSimulation extends OverlayRuntime implements OverlaySimulation {
     this.emit({ type: 'vars', values: granted });
   }
 
-  async getRecord(kind: RecordKind, id: string): Promise<OverlayRecord | null> {
+  async getRecord<K extends RecordKind>(kind: K, id: string): Promise<OverlayRecord<K> | null> {
     if (!this.subscriptions.records?.some((record) => record.kind === kind && record.id === id)) {
       throw new Error('Record was not subscribed');
     }
-    return this.state.records[recordKey(kind, id)] ?? null;
+    return (this.state.records[recordKey(kind, id)] ?? null) as unknown as OverlayRecord<K> | null;
   }
 
   setRecord(value: OverlayRecord): void {
