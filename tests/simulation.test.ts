@@ -32,6 +32,17 @@ describe('explicit overlay simulation', () => {
     simulation.stop();
   });
 
+  it('filters raw variable frames and snapshots the subscription configuration', async () => {
+    const requested = { events: ['follow' as const], variables: ['score'] };
+    const simulation = createSimulation(requested);
+    requested.variables.push('secret');
+    await simulation.start();
+    simulation.emit({ type: 'vars', values: { score: 0, secret: 'private' } });
+    expect(simulation.state.variables).toEqual({ score: 0 });
+    simulation.stop();
+    expect(simulation.state.variables).toEqual({});
+  });
+
   it('simulates granted records with monotonic revisions', async () => {
     const simulation = createSimulation({ events: [], records: [{ kind: 'widget', id: 'one' }] });
     await simulation.start();

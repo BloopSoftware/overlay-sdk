@@ -201,6 +201,28 @@ describe('published overlay client', () => {
     expect(overlay.state.status).toBe('stopped');
   });
 
+  it('can restart immediately after cancelling a pending start', async () => {
+    server.on('connection', (socket) => socket.once('message', () => {
+      socket.send(JSON.stringify({
+        type: 'sdk.subscribed', version: 2, revision: 1,
+        accepted: { events: [], variables: [], messages: [], boards: [], records: [] }, rejected: [],
+      }));
+      socket.send(JSON.stringify({ type: 'sdk.ready', version: 2, revision: 1 }));
+    }));
+    const overlay = createOverlay(subscriptions, { url });
+    const cancelled = overlay.start();
+    const rejected = expect(cancelled).rejects.toThrow('stopped');
+    overlay.stop();
+    const restarted = overlay.start();
+    expect(restarted).not.toBe(cancelled);
+    await rejected;
+    // The cancelled promise's finally must not clear the replacement start.
+    expect(overlay.start()).toBe(restarted);
+    await restarted;
+    expect(overlay.state.status).toBe('ready');
+    overlay.stop();
+  });
+
   it('marks state stale and reconnects after an ordinary close', async () => {
     let connections = 0;
     server.on('connection', (socket) => {
@@ -284,5 +306,57 @@ describe('published overlay client', () => {
     vi.stubGlobal('fetch', undefined);
     await expect(overlay.getRecord('theme', 'one')).rejects.toThrow('Fetch is unavailable');
     expect(() => createOverlay({ events: [] }, { recordRefreshMs: 999 })).toThrow(TypeError);
+  });
+
+  it('ignores an in-flight record after stop, including one whose body finishes late', async () => {
+    let finish: ((value: unknown) => void) | undefined;
+    vi.stubGlobal('fetch', vi.fn(async () => ({ status: 200, ok: true, json: () => new Promise((resolve) => { finish = resolve; }) })));
+    const overlay = createOverlay({ events: [], records: [{ kind: 'theme', id: 'one' }] }, { url });
+    const reading = overlay.getRecord('theme', 'one');
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
+    overlay.stop();
+    finish?.({ kind: 'theme', id: 'one', revision: 2, data: { title: 'Late' } });
+    expect(await reading).toBeNull();
+    expect(overlay.state.records).toEqual({});
+  });
+
+  it('uses detached subscriptions and filters data by the acknowledged grants', async () => {
+    const requested = { events: ['follow' as const], variables: ['score'] };
+    const received: unknown[] = [];
+    server.on('connection', (socket) => socket.once('message', (data) => {
+      received.push(JSON.parse(String(data)));
+      socket.send(JSON.stringify({ type: 'sdk.subscribed', version: 2, revision: 1,
+        accepted: { events: [], variables: ['score'], messages: [], boards: [], records: [] }, rejected: [] }));
+      socket.send(JSON.stringify({ type: 'vars', values: { score: 4, secret: 9 } }));
+      socket.send(JSON.stringify({ type: 'follow', name: 'Not granted' }));
+      socket.send(JSON.stringify({ type: 'sdk.ready', version: 2, revision: 1 }));
+    }));
+    const overlay = createOverlay(requested, { url });
+    requested.variables.push('secret');
+    const follow = vi.fn(); overlay.onEvent('follow', follow);
+    await overlay.start();
+    expect(received).toMatchObject([{ subscribe: { variables: ['score'] } }]);
+    expect(overlay.state.variables).toEqual({ score: 4 });
+    expect(follow).not.toHaveBeenCalled();
+    overlay.stop();
+    expect(overlay.state.variables).toEqual({});
+  });
+
+  it('replaces old granted state when reconnecting with a smaller grant set', async () => {
+    let connections = 0;
+    server.on('connection', (socket) => socket.once('message', () => {
+      connections++;
+      socket.send(JSON.stringify({ type: 'sdk.subscribed', version: 2, revision: connections,
+        accepted: { events: [], variables: connections === 1 ? ['score'] : [], messages: [], boards: [], records: [] }, rejected: [] }));
+      if (connections === 1) socket.send(JSON.stringify({ type: 'vars', values: { score: 4 } }));
+      socket.send(JSON.stringify({ type: 'sdk.ready', version: 2, revision: connections }));
+      if (connections === 1) setTimeout(() => socket.close(1012, 'Restart'), 10);
+    }));
+    const overlay = createOverlay({ events: [], variables: ['score'] }, { url });
+    await overlay.start();
+    expect(overlay.state.variables).toEqual({ score: 4 });
+    await vi.waitFor(() => expect(overlay.state.revision).toBe(2), { timeout: 1500 });
+    expect(overlay.state.variables).toEqual({});
+    overlay.stop();
   });
 });

@@ -44,7 +44,7 @@ with the grants chosen for the named overlay; a requested name does not grant
 access by itself.
 
 For a browser page without a build tool, load the versioned script from
-Bloopbot (`/assets/overlay-sdk-0.1.0.js`) and use
+Bloopbot (`/assets/overlay-sdk-1.0.0.js`) and use
 `BloopbotOverlay.createOverlay(...)`. The browser and npm builds use the same
 source and version.
 
@@ -106,3 +106,13 @@ Protocol major versions remain supported for at least 12 months after a replacem
 app stages that artifact at `/assets/overlay-sdk-<version>.js`. Publishing the
 package and deploying the app are separate steps; deploy a compatible V2 server
 before directing overlay authors to a new SDK version.
+
+## SDK 1.0 contract
+
+The named-overlay transport still uses protocol V2. Configuration is detached at construction. State and record snapshots are deeply frozen; event callbacks receive separate JSON objects. `EventFrame<F>` types each family's raw `type`; other payload fields remain unknown and should be narrowed. Variable values are string, finite number, boolean or null.
+
+`stop()` cancels timers and in-flight record reads, clears data and rejects a pending start. Immediate restart works. Ordinary disconnects retry with backoff; acknowledged grants replace prior data before replay, and revoked access clears state and stops retries. Listeners persist across stop/start; their unsubscribe functions remove them. Reads cancelled by a restart or stop resolve null and never restore stale data. Simulated raw events and variables use the same subscription filter as live frames.
+
+`createGraphicsRuntime(options)` supplies the Studio v1.0 context without importing the application or animation libraries. Hosts declare events, variables, scalar settings and resolved asset URLs, supply an optional paused timeline factory, and drive monotonic milliseconds via `advance`. The context exposes immutable settings/assets/variables, event and resize listeners, ticks, scheduled callbacks and exactly-once disposal. Recreate it and replay events to seek backwards. Every subscription and scheduled callback has cancellation. Destruction kills registered timelines and clears jobs/listeners. Callbacks are isolated and report bounded generic diagnostics.
+
+Migrating from 0.1.0: recreate a reader to change subscriptions instead of mutating arrays; handle null after cancelled reads; use a listener's unsubscribe when discarding it. The `/assets/overlay-sdk-0.1.0.js` browser artifact remains available for existing pinned pages. New starters use 1.0.0. Pin the tested version and consult the developer reference before updating deployed overlays.

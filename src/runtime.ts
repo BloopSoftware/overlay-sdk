@@ -1,19 +1,25 @@
-import { readRecord, recordKey } from './protocol.js';
+import { eventFamily, readRecord, recordKey } from './protocol.js';
 import type {
-  Diagnostic, EventFamily, OverlayFrame, OverlayReader, OverlayRecord, OverlayState,
+  Diagnostic, EventFamily, EventFrame, OverlayFrame, OverlayReader, OverlayRecord, OverlayState, OverlayValue,
   RecordKind, Unsubscribe,
 } from './types.js';
 
-function familyOf(frame: OverlayFrame): string {
-  if (frame.type !== 'stage') return frame.type;
-  if (frame.kind === 'media') return 'stage.media';
-  if (frame.kind === 'minigame') return 'stage.minigame';
-  return 'stage.alert';
+function immutable<T>(value: T): T {
+  const snapshot = structuredClone(value);
+  const seen = new WeakSet<object>();
+  function freeze(item: unknown): void {
+    if (!item || typeof item !== 'object' || seen.has(item)) return;
+    seen.add(item);
+    for (const child of Object.values(item)) freeze(child);
+    Object.freeze(item);
+  }
+  freeze(snapshot);
+  return snapshot;
 }
 
 /** Shared state and handler rules for live sockets and explicit simulation. */
 export abstract class OverlayRuntime implements OverlayReader {
-  private current: OverlayState = { status: 'idle', revision: null, variables: {}, records: {}, lastEventAt: null };
+  private current: OverlayState = immutable({ status: 'idle', revision: null, variables: {}, records: {}, lastEventAt: null });
   private readonly events = new Map<string, Set<(frame: OverlayFrame) => void>>();
   private readonly stateHandlers = new Set<(state: OverlayState) => void>();
   private readonly diagnosticHandlers = new Set<(diagnostic: Diagnostic) => void>();
@@ -23,11 +29,13 @@ export abstract class OverlayRuntime implements OverlayReader {
   abstract stop(): void;
   abstract getRecord(kind: RecordKind, id: string): Promise<OverlayRecord | null>;
 
-  onEvent(family: EventFamily, handler: (frame: OverlayFrame) => void): Unsubscribe {
+  onEvent<F extends EventFamily>(family: F, handler: (frame: EventFrame<F>) => void): Unsubscribe {
     const handlers = this.events.get(family) ?? new Set<(frame: OverlayFrame) => void>();
-    handlers.add(handler);
+    // acceptEvent dispatches only after eventFamily has selected this family.
+    const deliver = (frame: OverlayFrame) => handler(frame as EventFrame<F>);
+    handlers.add(deliver);
     this.events.set(family, handlers);
-    return () => { handlers.delete(handler); if (handlers.size === 0) this.events.delete(family); };
+    return () => { handlers.delete(deliver); if (handlers.size === 0) this.events.delete(family); };
   }
 
   onState(handler: (state: OverlayState) => void): Unsubscribe {
@@ -51,11 +59,13 @@ export abstract class OverlayRuntime implements OverlayReader {
       return;
     }
     if (frame.type === 'vars' && typeof frame.values === 'object' && frame.values !== null && !Array.isArray(frame.values)) {
-      this.setState({ variables: { ...this.current.variables, ...frame.values } });
+      const values = Object.fromEntries(Object.entries(frame.values).filter((entry): entry is [string, OverlayValue] =>
+        entry[1] === null || typeof entry[1] === 'string' || typeof entry[1] === 'boolean' || typeof entry[1] === 'number' && Number.isFinite(entry[1])));
+      this.setState({ variables: { ...this.current.variables, ...values } });
     }
     this.setState({ lastEventAt: Date.now() });
-    for (const handler of this.events.get(familyOf(frame)) ?? []) {
-      try { handler(frame); }
+    for (const handler of this.events.get(eventFamily(frame)) ?? []) {
+      try { handler(structuredClone(frame)); }
       catch { this.emitDiagnostic({ code: 'handler_error', message: 'Overlay event handler failed' }); }
     }
   }
@@ -75,7 +85,7 @@ export abstract class OverlayRuntime implements OverlayReader {
   }
 
   protected setState(update: Partial<OverlayState>): void {
-    this.current = { ...this.current, ...update };
+    this.current = Object.freeze({ ...this.current, ...immutable(update) });
     for (const handler of this.stateHandlers) {
       try { handler(this.current); }
       catch { this.emitDiagnostic({ code: 'handler_error', message: 'Overlay state handler failed' }); }

@@ -26,14 +26,14 @@ function isObject(value: unknown): value is Record<string, unknown> {
 }
 
 function uniqueNames(values: readonly string[], label: string, max: number, pattern = NAME): string[] {
-  if (values.length > max || values.some((value) => typeof value !== 'string' || !pattern.test(value))) {
+  if (!Array.isArray(values) || values.length > max || values.some((value) => typeof value !== 'string' || !pattern.test(value))) {
     throw new TypeError(`Invalid ${label} subscription`);
   }
   return [...new Set(values)];
 }
 
 /** A malformed request never reaches the socket; the server decides grants. */
-export function helloFrame(subscriptions: Subscriptions): object {
+export function helloFrame(subscriptions: Subscriptions): { hello: 'overlay-sdk'; version: number; subscribe: AcceptedSubscriptions } {
   if (!subscriptions || !Array.isArray(subscriptions.events)) throw new TypeError('Events must be an array');
   const events = uniqueNames(subscriptions.events, 'event', 64);
   const variables = uniqueNames(subscriptions.variables ?? [], 'variable', 32);
@@ -45,8 +45,50 @@ export function helloFrame(subscriptions: Subscriptions): object {
     typeof record.id !== 'string' || !RECORD_ID.test(record.id))) {
     throw new TypeError('Invalid record subscription');
   }
-  const uniqueRecords = [...new Map(records.map((record) => [`${record.kind}:${record.id}`, record])).values()];
+  const uniqueRecords = [...new Map(records.map((record) => [`${record.kind}:${record.id}`, { ...record }])).values()];
   return { hello: 'overlay-sdk', version: PROTOCOL_VERSION, subscribe: { events, variables, messages, boards, records: uniqueRecords } };
+}
+
+/** Validate and detach configuration before any asynchronous work starts. */
+export function snapshotSubscriptions(subscriptions: Subscriptions): Subscriptions {
+  const validated = helloFrame(subscriptions).subscribe;
+  return { ...validated, events: [...subscriptions.events], boards: [...(subscriptions.boards ?? [])] };
+}
+
+export function eventFamily(frame: OverlayFrame): string {
+  if (frame.type !== 'stage') return frame.type;
+  if (frame.kind === 'media') return 'stage.media';
+  if (frame.kind === 'minigame') return 'stage.minigame';
+  return 'stage.alert';
+}
+
+/** One data filter shared by live acknowledgement/replay and simulation. */
+export function grantedFrame(frame: OverlayFrame, grants: AcceptedSubscriptions): OverlayFrame | null {
+  if (frame.type === 'vars') {
+    if (!isObject(frame.values)) return null;
+    return { type: 'vars', values: Object.fromEntries(Object.entries(frame.values).filter(([key, value]) =>
+      grants.variables.includes(key) && (value === null || typeof value === 'string' || typeof value === 'boolean' || typeof value === 'number' && Number.isFinite(value)))) };
+  }
+  if (frame.type === 'sdk.record') {
+    const record = readRecord(frame);
+    return record && grants.records.some((request) => request.kind === record.kind && request.id === record.id) ? frame : null;
+  }
+  if (!grants.events.includes(eventFamily(frame))) return null;
+  if (frame.type === 'leaderboard' && (typeof frame.board !== 'string' || !grants.boards.includes(frame.board))) return null;
+  if (frame.type === 'custom' && (typeof frame.name !== 'string' || !grants.messages.includes(frame.name))) return null;
+  return frame;
+}
+
+/** A server acknowledgement cannot expand the author's requested subscriptions. */
+export function intersectSubscriptions(accepted: AcceptedSubscriptions, requested: Subscriptions): AcceptedSubscriptions {
+  const want = helloFrame(requested).subscribe;
+  return {
+    events: accepted.events.filter((name) => want.events.includes(name)),
+    variables: accepted.variables.filter((name) => want.variables.includes(name)),
+    messages: accepted.messages.filter((name) => want.messages.includes(name)),
+    boards: accepted.boards.filter((name) => want.boards.includes(name)),
+    records: accepted.records.filter((record) => want.records.some((request) => request.kind === record.kind && request.id === record.id)),
+  };
 }
 
 function isStringArray(value: unknown): value is string[] {
@@ -54,7 +96,7 @@ function isStringArray(value: unknown): value is string[] {
 }
 
 function isRecordRequest(value: unknown): value is RecordRequest {
-  return isObject(value) && typeof value.kind === 'string' && typeof value.id === 'string';
+  return isObject(value) && typeof value.kind === 'string' && isRecordKind(value.kind) && typeof value.id === 'string' && RECORD_ID.test(value.id);
 }
 
 export function isRecordKind(value: string): value is RecordKind {
@@ -75,7 +117,7 @@ export function readRecord(value: unknown): OverlayRecord | null {
 
 function isRejection(value: unknown): value is RejectedSubscription {
   return isObject(value) &&
-    ['event', 'variable', 'message', 'board', 'record'].includes(String(value.kind)) &&
+    typeof value.kind === 'string' && ['event', 'variable', 'message', 'board', 'record'].includes(value.kind) &&
     typeof value.name === 'string' &&
     (value.reason === 'unknown' || value.reason === 'not_granted');
 }

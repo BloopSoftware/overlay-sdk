@@ -1,4 +1,4 @@
-import { helloFrame, readEventFrame, readRecord, recordKey } from './protocol.js';
+import { eventFamily, grantedFrame, helloFrame, readEventFrame, readRecord, recordKey, snapshotSubscriptions } from './protocol.js';
 import { OverlayRuntime } from './runtime.js';
 import type { OverlayFrame, OverlayReader, OverlayRecord, RecordKind, Subscriptions } from './types.js';
 
@@ -10,10 +10,11 @@ export interface OverlaySimulation extends OverlayReader {
 
 class LocalSimulation extends OverlayRuntime implements OverlaySimulation {
   private running = false;
+  private readonly subscriptions: Subscriptions;
 
-  constructor(private readonly subscriptions: Subscriptions) {
+  constructor(subscriptions: Subscriptions) {
     super();
-    helloFrame(subscriptions);
+    this.subscriptions = snapshotSubscriptions(subscriptions);
   }
 
   async start(): Promise<void> {
@@ -23,20 +24,19 @@ class LocalSimulation extends OverlayRuntime implements OverlaySimulation {
 
   stop(): void {
     this.running = false;
-    this.setState({ status: 'stopped' });
+    this.setState({ status: 'stopped', variables: {}, records: {}, lastEventAt: null, revision: null });
   }
 
   emit(frame: OverlayFrame): void {
     if (!this.running) throw new Error('Start the overlay simulation before emitting events');
     const valid = readEventFrame(frame);
     if (!valid) throw new TypeError('Invalid overlay frame');
-    const family = valid.type === 'stage'
-      ? valid.kind === 'media' ? 'stage.media' : valid.kind === 'minigame' ? 'stage.minigame' : 'stage.alert'
-      : valid.type;
+    const family = eventFamily(valid);
     if (family !== 'vars' && !new Set<string>(this.subscriptions.events).has(family)) {
       throw new Error(`Event ${family} was not subscribed`);
     }
-    this.acceptEvent(valid);
+    const allowed = grantedFrame(valid, helloFrame(this.subscriptions).subscribe);
+    if (allowed) this.acceptEvent(allowed);
   }
 
   setVariables(values: Record<string, unknown>): void {

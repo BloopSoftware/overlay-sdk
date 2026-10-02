@@ -43,21 +43,27 @@ export interface OverlayFrame {
   [field: string]: unknown;
 }
 
+/** Payloads are additive JSON; narrow individual unknown fields before use. */
+export type EventFrame<F extends EventFamily> = OverlayFrame & {
+  type: F extends `stage.${string}` ? 'stage' : F;
+};
+export type OverlayValue = string | number | boolean | null;
+
 export interface OverlayRecord {
-  kind: RecordKind;
-  id: string;
-  revision: number;
-  data: unknown;
+  readonly kind: RecordKind;
+  readonly id: string;
+  readonly revision: number;
+  readonly data: unknown;
 }
 
 export type ConnectionStatus = 'idle' | 'connecting' | 'ready' | 'stale' | 'expired' | 'stopped';
 
 export interface OverlayState {
-  status: ConnectionStatus;
-  revision: number | null;
-  variables: Readonly<Record<string, unknown>>;
-  records: Readonly<Record<string, OverlayRecord>>;
-  lastEventAt: number | null;
+  readonly status: ConnectionStatus;
+  readonly revision: number | null;
+  readonly variables: Readonly<Record<string, OverlayValue>>;
+  readonly records: Readonly<Record<string, OverlayRecord>>;
+  readonly lastEventAt: number | null;
 }
 
 export interface Diagnostic {
@@ -72,7 +78,7 @@ export interface OverlayReader {
   readonly state: OverlayState;
   start(): Promise<void>;
   stop(): void;
-  onEvent(family: EventFamily, handler: (frame: OverlayFrame) => void): Unsubscribe;
+  onEvent<F extends EventFamily>(family: F, handler: (frame: EventFrame<F>) => void): Unsubscribe;
   onState(handler: (state: OverlayState) => void): Unsubscribe;
   onDiagnostic(handler: (diagnostic: Diagnostic) => void): Unsubscribe;
   getRecord(kind: RecordKind, id: string): Promise<OverlayRecord | null>;
