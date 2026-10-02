@@ -15,7 +15,8 @@ describe('graphics SDK v1 clock and lifetime', () => {
     runtime.deliver({ type: 'follow', name: 'Ignored' });
     runtime.deliver({ type: 'raid', name: 'Ada' });
     runtime.deliver({ type: 'vars', values: { score: 0, secret: 'private', bad: NaN } });
-    expect(raid).toHaveBeenCalledExactlyOnceWith({ type: 'raid', name: 'Ada' });
+    expect(raid).toHaveBeenCalledTimes(1);
+    expect(raid).toHaveBeenCalledWith({ type: 'raid', name: 'Ada' });
     expect(values).toHaveBeenLastCalledWith({ score: 0 });
     expect(runtime.context.settings.accent).toBe('#fff');
     expect(Object.isFrozen(runtime.context.settings)).toBe(true);
@@ -93,7 +94,8 @@ describe('graphics SDK v1 clock and lifetime', () => {
     runtime.advance(1500);
     const tick = vi.fn();
     runtime.context.onTick(tick);
-    expect(tick).toHaveBeenCalledExactlyOnceWith({ timeMs: 1500, deltaMs: 0 });
+    expect(tick).toHaveBeenCalledTimes(1);
+    expect(tick).toHaveBeenCalledWith({ timeMs: 1500, deltaMs: 0 });
     expect(animation.kill).toHaveBeenCalledOnce();
     runtime.advance(2000); runtime.destroy();
     expect(animation.kill).toHaveBeenCalledOnce();
