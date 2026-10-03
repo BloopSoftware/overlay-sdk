@@ -1,7 +1,7 @@
 {
   "name": "@bloopbot/overlay-sdk",
   "version": "1.1.0",
-  "description": "Typed browser SDK for Bloopbot custom overlays",
+  "description": "Typed browser SDK for custom OBS overlays on Bloopbot, the Twitch chat bot built from visual flows",
   "type": "module",
   "license": "MIT",
   "sideEffects": false,

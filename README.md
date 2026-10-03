@@ -1,9 +1,15 @@
 # Bloopbot Overlay SDK
 
-Typed client for custom OBS Browser Source overlays. The SDK handles the
-connection and data. Your page renders the overlay.
+[Bloopbot](https://bloopbot.com/) is a Twitch chat bot where every command,
+alert and timer is a visual flow you draw in your browser. This package is its
+overlay SDK: a typed client for the custom OBS Browser Source overlays a
+Bloopbot channel publishes. The SDK handles the connection and data. Your page
+renders the overlay.
 
-The full SDK reference is served at `/developers/overlays` on Bloopbot.
+The full SDK reference is served at
+[bloopbot.com/developers/overlays](https://bloopbot.com/developers/overlays);
+the streamer-facing guide is
+[Custom Twitch overlays](https://bloopbot.com/features/custom-twitch-overlays).
 
 ## Use it in a page
 
